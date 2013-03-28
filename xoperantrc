@@ -1,0 +1,33 @@
+
+# SET THE FOLLOWING IN MINUTES
+# Duration of entire session
+# Break between bouts
+set duration	30
+set break		1
+
+# SET THE FOLLOWING IN SECONDS
+# Period in which a song cannot be retriggered
+set timeout		5
+
+# SET THE NUMBER OF TRIALS PER BOUT
+set forced		7
+set free		80
+
+################################################
+
+# EACH BOX USED MUST BE DEFINED HERE
+
+# Box 1
+box {
+	serial	123456
+	song	songname1.wav
+	song	songname2.wav
+}
+
+# Box 2
+box {
+	serial	123789
+	song	songname3.wav
+	song	songname4.wav
+}
+

@@ -1,0 +1,89 @@
+ctl.!default {
+	type hw
+	card Intel
+}
+
+pcm.dmixed {
+	type asym
+	playback.pcm {
+		type dmix
+		ipc_key 5678293
+		ipc_perm 0660
+		ipc_gid audio
+		slave {
+			channels 8
+			pcm {
+				type hw
+				card 1
+				device 0
+				subdevice 0
+			}
+			period_size 1024
+			buffer_size 8192
+		}
+		bindings {
+			0 0
+			1 1
+			2 2
+			3 3
+			4 4
+			5 5
+			6 6
+			7 7
+		}
+	}
+	capture.pcm "hw:0"
+}
+
+pcm.!default {
+	type plug
+	slave.pcm "dmixed"
+}
+
+pcm.Out0 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.0 0.25
+}
+
+pcm.Out1 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.1 0.25
+}
+
+pcm.Out4 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.2 0.25
+}
+
+pcm.Out5 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.3 0.25
+}
+
+pcm.Out6 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.4 0.25
+}
+
+pcm.Out7 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.5 0.25
+}
+
+pcm.Out2 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.6 0.25
+}
+
+pcm.Out3 {
+	type plug
+	slave.pcm "dmixed"
+	ttable.0.7 0.25
+}
