@@ -29,8 +29,8 @@
 #include <X11/keysym.h>
 #include <X11/XKBlib.h>
 
-#define DATAPATH	"/mnt/data/"
-#define TILING_WM	False
+#define DATAPATH	"data/"
+#define SONGPATH	"songs/"
 
 typedef CPhidgetInterfaceKitHandle IFKh;
 typedef CPhidgetHandle Ph;
@@ -57,21 +57,24 @@ typedef struct _Box {
 	int		total[N_PERCH];
 } Box;
 
-static Box		*box;
-static int		box_count;
-static FILE		*log;
-static int		check_interval;
-static time_t	start_time;
-static time_t	session_len;
-static time_t	inter_session;
-static time_t	time_stamp;
-static int		timeout;
-static int		forced_trials = 0;
-static int		free_trials;
-static int		*random_states;
-static char		*song_path;
-static char		logline[256] = "Welcome to XOperant - Connecting to phidgets...";
-static char		cmd_str[256] = "";
+static Box			*box;
+static int			box_count;
+static FILE			*log;
+static int			check_interval;
+static time_t		start_time;
+static time_t		session_len;
+static time_t		inter_session;
+static time_t		time_stamp;
+static int			timeout;
+static int			forced_trials = 0;
+static int			free_trials;
+static int			*random_states;
+static char			*song_path;
+static char			logline[256] =
+	"Welcome to XOperant - Connecting to phidgets...";
+static char			cmd_str[256] = "";
+static const char	*logfile = ".xoperant.log";
+static Bool			overlap=False,flipflop=False;
 
 static void buttonpress(XEvent *);
 static void command_line(int,const char **);
@@ -80,7 +83,7 @@ static void draw();
 static void expose(XEvent *);
 static void keypress(XEvent *);
 static void log_entry(const char *,...);
-static void read_rc();
+static void read_rc(FILE *);
 static void set_color(const char *);
 static void set_state(int,int);
 
@@ -93,7 +96,7 @@ static GC gc;
 static Colormap cmap;
 static XFontStruct *fontstruct;
 static int fontheight;
-static const char font[] = "-*-terminus-bold-r-*--12-120-72-72-c-60-*-*";
+static const char font[] = "-misc-fixed-medium-r-normal--13-120-75-75-c-70-*-*";
 static void (*handler[LASTEvent]) (XEvent *) = {
 	[ButtonPress]	= buttonpress,
 	[Expose]		= expose,
@@ -116,41 +119,36 @@ void buttonpress(XEvent *e) {
 	else if (y > 215 && y < 225)	{i=3; side=1;}
 	else return;
 	log_entry("Manual trigger %d in box %d, song triggered\n",side,i+1);
-	sprintf(cmd_str,"aplay -D Out%d /mnt/songs/%s >/dev/null 2>&1 &",
+	sprintf(cmd_str,"aplay -D Out%d " SONGPATH "%s >/dev/null 2>&1 &",
 		i*N_PERCH+side,box[i].song[side]);
 	log_entry("SYS: %s\n",cmd_str);
 	system(cmd_str);
 }
 
 void command_line(int argc, const char **argv) {
-	char *rcfile = NULL;
-	char *logfile = NULL;
-	char *home = getenv("HOME");
 	int i,j=-1;
+	FILE *rc = NULL;
 	for (i = 1; i < argc; i++) {
 		if (argv[i][0] == '-') {
 			/* TODO options */
 		}
-		else j=i;
+		else {
+			rc = fopen(argv[i],"r");
+			if (!rc) fprintf(stderr,"unable to open \"%s\"\n",argv[i]);
+		}
 	}
-	if (j == -1) {
-		rcfile = (char *) calloc(strlen(home) + 13, sizeof(char));
-		strcpy(rcfile,home);
-		strcat(rcfile,"/.xoperantrc");
+	if (!rc) {
+		rc = fopen("xoperantrc","r");
+		if (!rc) {
+			chdir(getenv("HOME"));
+			rc = fopen(".xoperantrc","r");
+		}
+		if (!rc) die("No xoperantrc config file found\n");
 	}
-	else {
-		rcfile = (char *) calloc(strlen(argv[j]) + 1, sizeof(char));
-		strcpy(rcfile,argv[j]);
-	}
-	if (!logfile) {
-		logfile = (char *) calloc(strlen(home) + 14, sizeof(char));
-		strcpy(logfile,home);
-		strcat(logfile,"/.xoperantlog");
-		log = fopen(logfile,"a");
-		free(logfile);
-	}	
-	read_rc(rcfile);
-	free(rcfile);
+	chdir(getenv("HOME"));
+	log = fopen(logfile,"a");
+	read_rc(rc);
+	fclose(rc);
 }
 
 void die(const char *msg,...) {
@@ -299,15 +297,18 @@ int ph_error(Ph ifk,void *uptr,int err,const char *msg) {
 	return 0;
 }
 
+#define MAX(a,b)	(a > b ? a : b)
 int ph_sensor(IFKh ifk, void *uptr, int index, int value) {
 	if (value > 0) return 0;
 	int i = *(int *)uptr;
 	int side = index;
 	time_stamp = time(NULL);
 	if IN_STATE(i,side+1) {
-		if (time_stamp > box[i].last_play[side] + timeout) {
+		time_t lp = (overlap ? box[i].last_play[i] :
+				MAX(box[i].last_play[0],box[i].last_play[1]));
+		if (time_stamp > lp + timeout) {
 			log_entry("Response %d in box %d, song triggered\n",side,i+1);
-			sprintf(cmd_str,"aplay -D Out%d /mnt/songs/%s >/dev/null 2>&1 &",
+			sprintf(cmd_str,"aplay -D Out%d " SONGPATH "%s >/dev/null 2>&1 &",
 				i*N_PERCH+side,box[i].song[side]);
 			log_entry("SYS: %s\n",cmd_str);
 			system(cmd_str);
@@ -320,6 +321,11 @@ int ph_sensor(IFKh ifk, void *uptr, int index, int value) {
 				if (box[i].trial >= free_trials) {
 					box[i].trial = 0;
 					set_state(i,STATE_OFF);
+					if (flipflop) {
+						char *s0 = box[i].song[0];
+						box[i].song[0] = box[i].song[1];
+						box[i].song[1] = s0;
+					}
 				}
 			}
 			else { /* forced trial */
@@ -336,14 +342,12 @@ int ph_sensor(IFKh ifk, void *uptr, int index, int value) {
 		log_entry("Response %d in box %d (INACTIVE)\n",side,i+1);
 }
 
-void read_rc(const char *filename) {
+void read_rc(FILE *rc) {
 	char line[256];
 	char str[120];
 	char *c;
 	int i=0,j;
 	int session_minutes = 30;
-	FILE *rc = fopen(filename,"r");
-	if (!rc) die("Error opening config file \"%s\"\n",filename);
 	while (fgets(line,255,rc)) if (strncmp(line,"box {",5) == 0) box_count++;
 	box = (Box *) calloc(box_count,sizeof(Box));
 	fseek(rc,0,SEEK_SET);
@@ -365,12 +369,14 @@ void read_rc(const char *filename) {
 				else if (sscanf(line," serial %d",&box[i].serial) == 1);
 			}
 		}
-		else if (!	sscanf(line,"set duration %d",&session_len)	&&
-				!	sscanf(line,"set break %d",&inter_session)	&&
-				!	sscanf(line,"set timeout %d",&timeout)		&&
-				!	sscanf(line,"set forced %d",&forced_trials)	&&
-				!	sscanf(line,"set free %d",&free_trials)		)
-			log_entry("faulty config entry: %s\n",line);
+		else if (	sscanf(line,"set duration %d",&session_len)	||
+					sscanf(line,"set break %d",&inter_session)	||
+					sscanf(line,"set timeout %d",&timeout)		||
+					sscanf(line,"set forced %d",&forced_trials)	||
+					sscanf(line,"set free %d",&free_trials)		);
+		else if (strncmp(line,"set overlap",10)==0) overlap = True;
+		else if (strncmp(line,"set flipflop",10)==0) flipflop = True;
+		else log_entry("faulty config entry: %s\n",line);
 	}
 	struct tm *tinfo;
 	time(&time_stamp);
@@ -417,8 +423,8 @@ int main(int argc, const char **argv) {
 	XStoreName(dpy,win,"Operant");
 	XSetWindowAttributes wa;
 	wa.event_mask = ExposureMask|KeyPressMask|ButtonPressMask;
-	wa.override_redirect = TILING_WM;
-	XChangeWindowAttributes(dpy,win,CWEventMask|CWOverrideRedirect,&wa);
+	XChangeWindowAttributes(dpy,win,CWEventMask,&wa);
+	XSetTransientForHint(dpy, win, root);
 	XMapWindow(dpy,win);
 	draw();
 	running = True;
@@ -498,7 +504,7 @@ int main(int argc, const char **argv) {
 	fclose(log);
 	free(box);
 	free(random_states);
-	//XFreeFont(dpy,fontstruct);
+	XFreeFont(dpy,fontstruct);
 	XUnloadFont(dpy,val.font);
 	XCloseDisplay(dpy);
 }
