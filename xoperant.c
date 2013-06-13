@@ -499,6 +499,7 @@ int main(int argc, const char **argv) {
 		CPhidget_delete((Ph)box[i].ifk);
 		for (j = 0; j < N_PERCH; j++) free(box[i].song[j]);
 		fclose(box[i].data);
+		set_state(i,STATE_OFF);
 	}
 	log_entry("####  END SESSION  ####\n");
 	fclose(log);
