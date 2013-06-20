@@ -483,9 +483,12 @@ int main(int argc, const char **argv) {
 		time_stamp = time(NULL);
 		if (r == 0) { /* timer event */
 			if (start_time + session_len < time_stamp) break;
-			for (i = 0; i < box_count; i++) if ( box[i].state == STATE_OFF && 
-					box[i].last_play[0] + inter_session > time_stamp )
-				set_state(i,random_states[0]);
+			for (i = 0; i < box_count; i++) {
+				if ( box[i].state == STATE_OFF) {
+					if (box[i].last_play[0] + inter_session > time_stamp || !inter_session)
+						set_state(i,random_states[0]);
+				}
+			}
 		}
 		if (FD_ISSET(xfd,&rfd)) while (XPending(dpy)) {
 			XNextEvent(dpy,&ev);
